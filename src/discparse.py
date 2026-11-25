@@ -41,18 +41,25 @@ class DiscParse():
         main_playlist = None
         longest = -1
         for line in output.decode("utf-8", "replace").splitlines():
-            # "#  Group  Playlist File  Length  Estimated Bytes  Measured Bytes"
+            # "  #  Group  Playlist File  Length  Estimated Bytes  Measured Bytes"
+            # Match the .mpls name and the first H:MM:SS after it, so the
+            # column position of the length doesn't matter.
             fields = line.split()
-            if len(fields) < 4 or not fields[0].isdigit() or not fields[2].lower().endswith(".mpls"):
+            playlist = next((f for f in fields if f.lower().endswith(".mpls")), None)
+            if playlist is None:
                 continue
-            try:
-                hours, minutes, seconds = (int(part) for part in fields[3].split(":"))
-            except ValueError:
+            length = None
+            for candidate in fields[fields.index(playlist) + 1:]:
+                try:
+                    hours, minutes, seconds = (int(part) for part in candidate.split(":"))
+                except ValueError:
+                    continue
+                length = hours * 3600 + minutes * 60 + seconds
+                break
+            if length is None or length <= longest:
                 continue
-            length = hours * 3600 + minutes * 60 + seconds
-            if length > longest:
-                longest = length
-                main_playlist = fields[2]
+            longest = length
+            main_playlist = playlist
         return main_playlist
 
     """

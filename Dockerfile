@@ -2,7 +2,9 @@
 # binary instead of the .NET/mono runtime plus the BDInfo.exe DLLs.
 FROM rust:1-slim-bookworm AS bdinfo
 
-RUN cargo install bdinfo-rs --version 5.0.0 --locked --root /bdinfo
+# No --locked here: that flag only applies to a local Cargo.lock, which
+# crates.io installs don't ship. --version pins the release instead.
+RUN cargo install bdinfo-rs --version 5.0.0 --root /bdinfo
 
 
 FROM python:3.12-slim-bookworm
@@ -32,6 +34,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application's code
 COPY . .
+
+# Unbuffered stdout/stderr so progress and tracebacks appear in real time
+ENV PYTHONUNBUFFERED=1
 
 # Set the entry point for the container
 ENTRYPOINT ["python", "/Only-Uploader/upload.py"]
