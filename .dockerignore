@@ -1,0 +1,9 @@
+.git
+.github
+.gitignore
+tmp
+__pycache__
+*.pyc
+*.mkv
+.vscode
+.wdm

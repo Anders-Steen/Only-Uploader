@@ -1,31 +1,34 @@
-FROM python:3.12
+# Build bdinfo-rs in a throwaway stage, so the final image ships one static
+# binary instead of the .NET/mono runtime plus the BDInfo.exe DLLs.
+FROM rust:1-slim-bookworm AS bdinfo
 
-# Update the package list and install system dependencies including mono
+RUN cargo install bdinfo-rs --version 5.0.0 --locked --root /bdinfo
+
+
+FROM python:3.12-slim-bookworm
+
+# System dependencies: ffmpeg for screenshots, mediainfo for pymediainfo
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
-    mediainfo=23.04-1 \
-    git \
-    g++ \
-    cargo \
-    mktorrent \
-    rustc \
-    mono-complete && \
+    mediainfo && \
     rm -rf /var/lib/apt/lists/*
+
+COPY --from=bdinfo /bdinfo/bin/bdinfo-rs /usr/local/bin/bdinfo-rs
 
 # Set up a virtual environment to isolate our Python dependencies
 RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 # Install wheel and other Python dependencies
-RUN pip install --upgrade pip wheel
+RUN pip install --no-cache-dir --upgrade pip wheel
 
 # Set the working directory in the container
 WORKDIR /Only-Uploader
 
 # Copy the Python requirements file and install Python dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application's code
 COPY . .

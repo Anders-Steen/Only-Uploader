@@ -24,7 +24,7 @@ A simple tool to take the work out of uploading.
   - ALL WITH MINIMAL INPUT!
   - Currently works with .mkv/.mp4/Blu-ray/DVD/HD-DVDs
 
-  Built with updated BDInfoCLI from https://github.com/rokibhasansagar/BDInfoCLI-ng
+  Blu-ray disc analysis with [bdinfo-rs](https://github.com/agentjp/bdinfo-rs), a Rust port of BDInfo
 
   ## Image Hosts:
   - OnlyImage - onlyimage
@@ -41,7 +41,7 @@ A simple tool to take the work out of uploading.
 
 ## **Setup:**
    - **REQUIRES AT LEAST PYTHON 3.12 AND PIP3**
-   - Needs [mono](https://www.mono-project.com/) on linux systems for BDInfo
+   - Needs [bdinfo-rs](https://github.com/agentjp/bdinfo-rs) for Blu-ray discs (in `PATH`, or dropped in `bin/`)
    - Also needs MediaInfo and ffmpeg installed on your system
       - On Windows systems, ffmpeg must be added to PATH (https://windowsloop.com/install-ffmpeg-windows-10/)
       - On linux systems, get it from your favorite package manager

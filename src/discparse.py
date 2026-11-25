@@ -1,7 +1,6 @@
 import os
 import shutil
 import traceback
-import sys
 import asyncio
 from glob import glob
 from pymediainfo import MediaInfo
@@ -14,6 +13,65 @@ from src.console import console
 class DiscParse():
     def __init__(self):
         pass
+
+    """
+    Locate the bdinfo-rs binary: PATH first, then a copy in bin/
+    """
+    def get_bdinfo_bin(self, base_dir):
+        found = shutil.which("bdinfo-rs")
+        if found:
+            return found
+        for name in ("bdinfo-rs", "bdinfo-rs.exe"):
+            local = os.path.join(base_dir, "bin", name)
+            if os.path.exists(local):
+                return local
+        return None
+
+    """
+    Ask bdinfo-rs for the playlist table and pick the longest playlist,
+    which is the disc's main feature (what BDInfo scanned by default)
+    """
+    async def get_main_playlist(self, binary, path):
+        proc = await asyncio.create_subprocess_exec(
+            binary, path, "--list",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        output, _ = await proc.communicate()
+        main_playlist = None
+        longest = -1
+        for line in output.decode("utf-8", "replace").splitlines():
+            # "#  Group  Playlist File  Length  Estimated Bytes  Measured Bytes"
+            fields = line.split()
+            if len(fields) < 4 or not fields[0].isdigit() or not fields[2].lower().endswith(".mpls"):
+                continue
+            try:
+                hours, minutes, seconds = (int(part) for part in fields[3].split(":"))
+            except ValueError:
+                continue
+            length = hours * 3600 + minutes * 60 + seconds
+            if length > longest:
+                longest = length
+                main_playlist = fields[2]
+        return main_playlist
+
+    """
+    Run bdinfo-rs on a disc and write its report into save_dir
+    """
+    async def scan_disc(self, binary, path, save_dir):
+        main_playlist = await self.get_main_playlist(binary, path)
+        if main_playlist is None:
+            console.print(f"[bold yellow]No playlist listed for {path}, scanning the whole disc")
+            args = [binary, path, save_dir, "--no-banner", "--whole"]
+        else:
+            args = [binary, path, save_dir, "--no-banner", "--mpls", main_playlist]
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        await proc.communicate()
+        return proc.returncode
 
     """
     Get and parse bdinfo
@@ -33,29 +91,23 @@ class DiscParse():
                     bdinfo_text = os.path.abspath(f"{save_dir}/BD_FULL_{str(i).zfill(2)}.txt")
                 else:
                     bdinfo_text = ""
-                    if sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
-                        try:
-                            # await asyncio.subprocess.Process(['mono', "bin/BDInfo/BDInfo.exe", "-w", path, save_dir])
-                            console.print(f"[bold green]Scanning {path}")
-                            proc = await asyncio.create_subprocess_exec('mono', f"{base_dir}/bin/BDInfo/BDInfo.exe", '-w', path, save_dir)
-                            await proc.wait()
-                        except Exception:
-                            console.print('[bold red]mono not found, please install mono')
-
-                    elif sys.platform.startswith('win32'):
-                        # await asyncio.subprocess.Process(["bin/BDInfo/BDInfo.exe", "-w", path, save_dir])
-                        console.print(f"[bold green]Scanning {path}")
-                        proc = await asyncio.create_subprocess_exec(f"{base_dir}/bin/BDInfo/BDInfo.exe", "-w", path, save_dir)
-                        await proc.wait()
-                        await asyncio.sleep(1)
-                    else:
-                        console.print("[red]Not sure how to run bdinfo on your platform, get support please thanks.")
+                    bdinfo_bin = self.get_bdinfo_bin(base_dir)
+                    if bdinfo_bin is None:
+                        raise RuntimeError("bdinfo-rs not found, install it or drop it in bin/")
+                    console.print(f"[bold green]Scanning {path}")
+                    returncode = await self.scan_disc(bdinfo_bin, path, save_dir)
+                    if returncode == 4:
+                        raise RuntimeError(f"AACS-encrypted disc, bdinfo-rs will not scan {path}")
+                    if returncode not in (0, 3):
+                        raise RuntimeError(f"bdinfo-rs failed scanning {path} (exit code {returncode})")
+                attempts = 0
                 while True:
+                    attempts += 1
                     try:
                         if bdinfo_text == "":
-                            for file in os.listdir(save_dir):
-                                if file.startswith("BDINFO"):
-                                    bdinfo_text = save_dir + "/" + file
+                            reports = glob(f"{save_dir}/BDINFO*.txt")
+                            if reports:
+                                bdinfo_text = max(reports, key=os.path.getmtime)
                         with open(bdinfo_text, 'r') as f:
                             text = f.read()
                             result = text.split("QUICK SUMMARY:", 2)
@@ -77,6 +129,8 @@ class DiscParse():
                         except shutil.SameFileError:
                             pass
                     except Exception:
+                        if attempts >= 3:
+                            raise
                         console.print(traceback.format_exc())
                         await asyncio.sleep(5)
                         continue
